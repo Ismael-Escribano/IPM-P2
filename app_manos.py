@@ -1,0 +1,164 @@
+import sys
+import cv2
+import mediapipe as mp
+import numpy as np
+import time
+from config import config
+
+"""
+# Configuración de la tarea
+BaseOptions = mp.tasks.BaseOptions
+PoseLandmarker = mp.tasks.vision.PoseLandmarker
+PoseLandmarkerOptions = mp.tasks.vision.PoseLandmarkerOptions
+VisionRunningMode = mp.tasks.vision.RunningMode
+
+options = PoseLandmarkerOptions(
+    base_options=BaseOptions(model_asset_path=config.model_path),
+    running_mode=VisionRunningMode.VIDEO,
+    num_poses=1
+)
+"""
+#Para lo de las manos
+
+BaseOptions = mp.tasks.BaseOptions
+HandLandmarker = mp.tasks.vision.HandLandmarker
+HandLandmarkerOptions = mp.tasks.vision.HandLandmarkerOptions
+VisionRunningMode = mp.tasks.vision.RunningMode
+
+options = HandLandmarkerOptions(
+    base_options=BaseOptions(model_asset_path="models/hand_landmarker.task"),
+    running_mode=VisionRunningMode.VIDEO,
+    num_hands=2,
+)
+
+
+# L2 Norm entre la mano y el punto objetivo (azul) 
+def calculate_distance(point1, point2) -> float:
+    distance = np.sqrt((point1[0] - point2[0]) ** 2 + (point1[1] - point2[1]) ** 2)
+    return distance
+
+# Crea una nueva capa y una posición random para el objetivo
+def new_circle(padding) -> None:
+    global circle_layer, random_circle_position
+    circle_layer =  np.zeros((int(cap.get(cv2.CAP_PROP_FRAME_HEIGHT)), int(cap.get(cv2.CAP_PROP_FRAME_WIDTH)), 3), dtype=np.uint8)
+    random_circle_position = (np.random.randint(padding, circle_layer.shape[1]-padding), np.random.randint(padding, circle_layer.shape[0]-padding))
+
+# Inicializar landmarker
+with HandLandmarker.create_from_options(options) as landmarker:
+    cap = cv2.VideoCapture(0)  # Abrir cámara
+    fps = cap.get(cv2.CAP_PROP_FPS)
+    if fps == 0:  # seguridad si la cámara no da fps
+        fps = 30
+
+    mp_hands = mp.solutions.hands
+
+    frame_ms = int(1000 / fps)
+
+    # Inicializar valores
+    timestamp = sum_t = counter = final_counter = 0
+    last_time=time.time()
+
+    blue_back = np.zeros((int(cap.get(cv2.CAP_PROP_FRAME_HEIGHT)), int(cap.get(cv2.CAP_PROP_FRAME_WIDTH)), 3), dtype=np.uint8)
+    blue_back[:] = (255, 0, 0)
+
+    new_circle(config.padding)
+
+    while cap.isOpened():
+        ret, frame = cap.read()
+        if not ret:
+            break
+
+        # Voltear frame horizontalmente
+        frame = cv2.flip(frame, 1)
+
+        # Dibuja el circulo random en el frame
+        cv2.circle(circle_layer, random_circle_position, 20, (255, 255, 255), -1)
+        h, w = circle_layer.shape[:2]
+        frame = np.where(circle_layer != 0, blue_back, frame)
+
+        # Variables de tiempo
+        now = time.time()
+        t = now - last_time
+        last_time = now
+        sum_t += t
+
+        # Convertir frame a formato MediaPipe
+        rgb = cv2.cvtColor(frame, cv2.COLOR_BGR2RGB)
+        mp_image = mp.Image(image_format=mp.ImageFormat.SRGB, data=rgb)
+
+        # Ejecutar detección
+        result = landmarker.detect_for_video(mp_image, timestamp)
+        timestamp += frame_ms
+
+        # Dibujar landmarks si los hay
+        if result.hand_landmarks:
+            for person_landmarks in result.hand_landmarks:  # para mantener tu estructura
+                h, w, _ = frame.shape
+
+                # Dibuja líneas entre los landmarks
+                for connection in mp_hands.HAND_CONNECTIONS:
+                    start_idx, end_idx = connection
+                    start = person_landmarks[start_idx]
+                    end = person_landmarks[end_idx]
+
+                    x1, y1 = int(start.x * w), int(start.y * h)
+                    x2, y2 = int(end.x * w), int(end.y * h)
+
+                    cv2.line(frame, (x1, y1), (x2, y2), (255, 0, 0), 2)
+
+                # Dibuja los puntos (landmarks)
+                for idx, landmark in enumerate(person_landmarks):
+                    x, y = int(landmark.x * w), int(landmark.y * h)
+                    cv2.circle(frame, (x, y), 3, (0, 255, 0), -1)
+
+                # El 8 es la punta del índice y el 4 la del pulgar
+                landmarks_points = [(person_landmarks[8].x, person_landmarks[8].y)]
+                for landmark in landmarks_points:
+                    h, w, _ = frame.shape
+                    x, y = int(landmark[0] * w), int(landmark[1] * h)
+                    if calculate_distance(landmark, (random_circle_position[0]/w, random_circle_position[1]/h)) < 0.05:
+                        counter += 1
+                        sum_t = 0
+                        new_circle(config.padding)
+                        break
+
+        if sum_t > config.circle_time:
+            sum_t = 0
+            new_circle(config.padding)
+        else:
+            radius = int((20 + config.circle_time) - (config.circle_time_radius * (sum_t - config.circle_time)) / config.circle_time)
+            cv2.circle(frame, random_circle_position, radius, (255, 255, 255), 2)
+
+
+        # Mostrar tiempo restante de juego y puntos obtenidos
+        cv2.putText(frame, f'Time: {config.game_time:.2f} - Points: {counter}', (10, 30), cv2.FONT_HERSHEY_SIMPLEX, 1, (0, 255, 0), 2)
+        
+        config.game_time -= t
+        
+        if config.game_time <= 0:
+            frame = np.zeros((int(cap.get(cv2.CAP_PROP_FRAME_HEIGHT)), int(cap.get(cv2.CAP_PROP_FRAME_WIDTH)), 3), dtype=np.uint8)
+            cv2.putText(frame, f'Score: {final_counter} points', (180, 80), cv2.FONT_HERSHEY_SIMPLEX, 1, (0, 255, 0), 2)
+            cv2.putText(frame, f'Press Enter to continue ...', (120, 160), cv2.FONT_HERSHEY_SIMPLEX, 1, (0, 255, 0), 2)
+            cv2.putText(frame, f'Press ESC to exit', (180, 240), cv2.FONT_HERSHEY_SIMPLEX, 1, (255, 128, 0), 2)
+
+        else:
+            final_counter = counter
+
+        # Mostrar resultado
+        cv2.imshow("Pose Landmarker", frame)
+
+        key = cv2.waitKey(1) & 0xFF
+        if key == 27:
+            break
+        if config.game_time <= 0 and key == 13:
+            config.game_time = 20
+            counter = 0
+            sum_t = 0
+            last_time = time.time()
+
+        # Tecla ESC para salir
+        if cv2.waitKey(1) & 0xFF == 27:
+            sys.exit(0)
+
+    cap.release()
+    cv2.destroyAllWindows()
