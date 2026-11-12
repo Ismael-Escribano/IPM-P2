@@ -5,6 +5,7 @@ import numpy as np
 import time
 from config import config
 import argparse
+import random
 
 def main() -> None:
     parser = argparse.ArgumentParser()
@@ -30,6 +31,52 @@ def main() -> None:
 def calculate_distance(point1, point2) -> float:
     distance = np.sqrt((point1[0] - point2[0]) ** 2 + (point1[1] - point2[1]) ** 2)
     return distance
+
+FORMAS = ["circulo", "rectangulo", "cuadrado", "triangulo", "rombo", "estrella"]
+
+def puntos_forma(tipo, cx, cy, r):
+    if tipo == "circulo":
+        return cv2.ellipse2Poly((cx, cy), (r, r), 0, 0, 360, 5)
+    if tipo == "rectangulo":
+        pts = [(-1.5*r, -0.9*r), (1.5*r, -0.9*r), (1.5*r, 0.9*r), (-1.5*r, 0.9*r)]
+    elif tipo == "cuadrado":
+        pts = [(-r, -r), (r, -r), (r, r), (-r, r)]
+    elif tipo == "triangulo":
+        pts = [(0, -r), (r, 0.8*r), (-r, 0.8*r)]
+    elif tipo == "rombo":
+        pts = [(0, -r), (r, 0), (0, r), (-r, 0)]
+    elif tipo == "estrella":
+        pts = []
+        for k in range(10):
+            ang = -np.pi / 2 + k * np.pi / 5
+            rad = r if k % 2 == 0 else r * 0.4
+            pts.append((rad * np.cos(ang), rad * np.sin(ang)))
+    return np.array([(cx + x, cy + y) for x, y in pts], dtype=np.int32)
+
+def generar_silueta(w, h, tipo=None):
+    tipo = tipo or random.choice(FORMAS)
+    r = random.randint(int(h * 0.09), int(h * 0.14))
+    margen = 15
+    ext_x = int(r * 1.5) + margen 
+
+    cx = random.randint(ext_x, w - ext_x)               
+    cy = random.randint(h // 2 + r + margen, h - r - 40)  
+
+    return {"tipo": tipo, "centro": (cx, cy), "radio": r,
+            "puntos": puntos_forma(tipo, cx, cy, r)}
+
+def dibujar_silueta(frame, silueta, color=(255, 255, 255)):
+    pts = silueta["puntos"]
+    cv2.polylines(frame, [pts], True, color, 3)
+
+def dibujar_divisoria(frame, color=(200, 200, 200)):
+    h, w = frame.shape[:2]
+    y = h // 2
+
+    cv2.line(frame, (0, y), (w, y), color, 2)
+
+    cv2.putText(frame, "Zona de dibujo", (10, y - 10),
+                cv2.FONT_HERSHEY_SIMPLEX, 0.6, color, 1)
 
 def game(args):
     #Para lo de las manos
@@ -67,6 +114,7 @@ def game(args):
         timestamp = sum_t = counter = final_counter = 0
         last_time=time.time()
 
+        silueta = None
 
         while cap.isOpened():
             ret, frame = cap.read()
@@ -75,6 +123,10 @@ def game(args):
 
             # Voltear frame horizontalmente
             frame = cv2.flip(frame, 1)
+
+            h_f, w_f = frame.shape[:2]
+            if silueta is None:
+                silueta = generar_silueta(w_f, h_f)
 
             # Variables de tiempo
             now = time.time()
@@ -85,6 +137,9 @@ def game(args):
             # Convertir frame a formato MediaPipe
             rgb = cv2.cvtColor(frame, cv2.COLOR_BGR2RGB)
             mp_image = mp.Image(image_format=mp.ImageFormat.SRGB, data=rgb)
+
+            dibujar_divisoria(frame)
+            dibujar_silueta(frame, silueta)
 
             # Ejecutar detección
             result = landmarker.recognize_for_video(mp_image, timestamp)
@@ -154,6 +209,7 @@ def game(args):
                 break
             if config.game_time <= 0 and key == 13:
                 config.game_time = 20
+                silueta = None
                 counter = 0
                 sum_t = 0
                 last_time = time.time()
