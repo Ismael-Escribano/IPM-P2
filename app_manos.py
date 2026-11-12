@@ -21,16 +21,15 @@ options = PoseLandmarkerOptions(
 #Para lo de las manos
 
 BaseOptions = mp.tasks.BaseOptions
-HandLandmarker = mp.tasks.vision.HandLandmarker
-HandLandmarkerOptions = mp.tasks.vision.HandLandmarkerOptions
+GestureRecognizer = mp.tasks.vision.GestureRecognizer
+GestureRecognizerOptions = mp.tasks.vision.GestureRecognizerOptions
 VisionRunningMode = mp.tasks.vision.RunningMode
 
-options = HandLandmarkerOptions(
-    base_options=BaseOptions(model_asset_path="models/hand_landmarker.task"),
+options = GestureRecognizerOptions(
+    base_options=BaseOptions(model_asset_path="models/gesture_recognizer.task"),
     running_mode=VisionRunningMode.VIDEO,
     num_hands=2,
 )
-
 
 # L2 Norm entre la mano y el punto objetivo (azul) 
 def calculate_distance(point1, point2) -> float:
@@ -44,7 +43,7 @@ def new_circle(padding) -> None:
     random_circle_position = (np.random.randint(padding, circle_layer.shape[1]-padding), np.random.randint(padding, circle_layer.shape[0]-padding))
 
 # Inicializar landmarker
-with HandLandmarker.create_from_options(options) as landmarker:
+with GestureRecognizer.create_from_options(options) as landmarker:
     cap = cv2.VideoCapture(0)  # Abrir cámara
     fps = cap.get(cv2.CAP_PROP_FPS)
     if fps == 0:  # seguridad si la cámara no da fps
@@ -87,8 +86,13 @@ with HandLandmarker.create_from_options(options) as landmarker:
         mp_image = mp.Image(image_format=mp.ImageFormat.SRGB, data=rgb)
 
         # Ejecutar detección
-        result = landmarker.detect_for_video(mp_image, timestamp)
+        result = landmarker.recognize_for_video(mp_image, timestamp)
         timestamp += frame_ms
+        if result.gestures:
+            for i, gestos in enumerate(result.gestures):
+                mano = result.handedness[i][0].category_name
+                gesto = gestos[0]
+                print(f"{mano}: {gesto.category_name} ({gesto.score:.2f})")
 
         # Dibujar landmarks si los hay
         if result.hand_landmarks:
