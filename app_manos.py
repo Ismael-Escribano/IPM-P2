@@ -45,13 +45,13 @@ def game(args):
     VisionRunningMode = mp.tasks.vision.RunningMode
 
     options = GestureRecognizerOptions(
-        base_options=BaseOptions(model_asset_path="models/hand_landmarker.task"),
+        base_options=BaseOptions(model_asset_path="models/gesture_recognizer.task"),
         running_mode=VisionRunningMode.VIDEO,
         num_hands=2,
     )
 
     # Inicializar landmarker
-    with GestureRecognizerOptions.create_from_options(options) as landmarker:
+    with GestureRecognizer.create_from_options(options) as landmarker:
         cap = cv2.VideoCapture(0)  # Abrir cámara
         cap.set(cv2.CAP_PROP_FOURCC, cv2.VideoWriter_fourcc(*'MJPG'))
         if args.resolution:
@@ -101,46 +101,46 @@ def game(args):
             rgb = cv2.cvtColor(frame, cv2.COLOR_BGR2RGB)
             mp_image = mp.Image(image_format=mp.ImageFormat.SRGB, data=rgb)
 
-        # Ejecutar detección
-        result = landmarker.recognize_for_video(mp_image, timestamp)
-        timestamp += frame_ms
-        if result.gestures:
-            for i, gestos in enumerate(result.gestures):
-                mano = result.handedness[i][0].category_name
-                gesto = gestos[0]
-                print(f"{mano}: {gesto.category_name} ({gesto.score:.2f})")
+            # Ejecutar detección
+            result = landmarker.recognize_for_video(mp_image, timestamp)
+            timestamp += frame_ms
+            if result.gestures:
+                for i, gestos in enumerate(result.gestures):
+                    mano = result.handedness[i][0].category_name
+                    gesto = gestos[0]
+                    print(f"{mano}: {gesto.category_name} ({gesto.score:.2f})")
 
-            # Dibujar landmarks si los hay
-            if result.hand_landmarks:
-                for person_landmarks in result.hand_landmarks:  # para mantener tu estructura
-                    h, w, _ = frame.shape
-
-                    # Dibuja líneas entre los landmarks
-                    for connection in mp_hands.HAND_CONNECTIONS:
-                        start_idx, end_idx = connection
-                        start = person_landmarks[start_idx]
-                        end = person_landmarks[end_idx]
-
-                        x1, y1 = int(start.x * w), int(start.y * h)
-                        x2, y2 = int(end.x * w), int(end.y * h)
-
-                        cv2.line(frame, (x1, y1), (x2, y2), (255, 0, 0), 2)
-
-                    # Dibuja los puntos (landmarks)
-                    for idx, landmark in enumerate(person_landmarks):
-                        x, y = int(landmark.x * w), int(landmark.y * h)
-                        cv2.circle(frame, (x, y), 3, (0, 255, 0), -1)
-
-                    # El 8 es la punta del índice y el 4 la del pulgar
-                    landmarks_points = [(person_landmarks[8].x, person_landmarks[8].y)]
-                    for landmark in landmarks_points:
+                # Dibujar landmarks si los hay
+                if result.hand_landmarks:
+                    for person_landmarks in result.hand_landmarks:  # para mantener tu estructura
                         h, w, _ = frame.shape
-                        x, y = int(landmark[0] * w), int(landmark[1] * h)
-                        if calculate_distance(landmark, (random_circle_position[0]/w, random_circle_position[1]/h)) < 0.05:
-                            counter += 1
-                            sum_t = 0
-                            new_circle(cap, config.padding)
-                            break
+
+                        # Dibuja líneas entre los landmarks
+                        for connection in mp_hands.HAND_CONNECTIONS:
+                            start_idx, end_idx = connection
+                            start = person_landmarks[start_idx]
+                            end = person_landmarks[end_idx]
+
+                            x1, y1 = int(start.x * w), int(start.y * h)
+                            x2, y2 = int(end.x * w), int(end.y * h)
+
+                            cv2.line(frame, (x1, y1), (x2, y2), (255, 0, 0), 2)
+
+                        # Dibuja los puntos (landmarks)
+                        for idx, landmark in enumerate(person_landmarks):
+                            x, y = int(landmark.x * w), int(landmark.y * h)
+                            cv2.circle(frame, (x, y), 3, (0, 255, 0), -1)
+
+                        # El 8 es la punta del índice y el 4 la del pulgar
+                        landmarks_points = [(person_landmarks[8].x, person_landmarks[8].y)]
+                        for landmark in landmarks_points:
+                            h, w, _ = frame.shape
+                            x, y = int(landmark[0] * w), int(landmark[1] * h)
+                            if calculate_distance(landmark, (random_circle_position[0]/w, random_circle_position[1]/h)) < 0.05:
+                                counter += 1
+                                sum_t = 0
+                                new_circle(cap, config.padding)
+                                break
 
             if sum_t > config.circle_time:
                 sum_t = 0
