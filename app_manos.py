@@ -31,12 +31,6 @@ def calculate_distance(point1, point2) -> float:
     distance = np.sqrt((point1[0] - point2[0]) ** 2 + (point1[1] - point2[1]) ** 2)
     return distance
 
-# Crea una nueva capa y una posición random para el objetivo
-def new_circle(cap, padding) -> None:
-    global circle_layer, random_circle_position
-    circle_layer =  np.zeros((int(cap.get(cv2.CAP_PROP_FRAME_HEIGHT)), int(cap.get(cv2.CAP_PROP_FRAME_WIDTH)), 3), dtype=np.uint8)
-    random_circle_position = (np.random.randint(padding, circle_layer.shape[1]-padding), np.random.randint(padding, circle_layer.shape[0]-padding))
-
 def game(args):
     #Para lo de las manos
     BaseOptions = mp.tasks.BaseOptions
@@ -73,10 +67,6 @@ def game(args):
         timestamp = sum_t = counter = final_counter = 0
         last_time=time.time()
 
-        blue_back = np.zeros((int(cap.get(cv2.CAP_PROP_FRAME_HEIGHT)), int(cap.get(cv2.CAP_PROP_FRAME_WIDTH)), 3), dtype=np.uint8)
-        blue_back[:] = (255, 0, 0)
-
-        new_circle(cap, config.padding)
 
         while cap.isOpened():
             ret, frame = cap.read()
@@ -85,11 +75,6 @@ def game(args):
 
             # Voltear frame horizontalmente
             frame = cv2.flip(frame, 1)
-
-            # Dibuja el circulo random en el frame
-            cv2.circle(circle_layer, random_circle_position, 20, (255, 255, 255), -1)
-            h, w = circle_layer.shape[:2]
-            frame = np.where(circle_layer != 0, blue_back, frame)
 
             # Variables de tiempo
             now = time.time()
@@ -136,22 +121,10 @@ def game(args):
                         for landmark in landmarks_points:
                             h, w, _ = frame.shape
                             x, y = int(landmark[0] * w), int(landmark[1] * h)
-                            if calculate_distance(landmark, (random_circle_position[0]/w, random_circle_position[1]/h)) < 0.05:
-                                counter += 1
-                                sum_t = 0
-                                new_circle(cap, config.padding)
-                                break
-
-            if sum_t > config.circle_time:
-                sum_t = 0
-                new_circle(cap, config.padding)
-            else:
-                radius = int((20 + config.circle_time) - (config.circle_time_radius * (sum_t - config.circle_time)) / config.circle_time)
-                cv2.circle(frame, random_circle_position, radius, (255, 255, 255), 2)
 
 
             # Mostrar tiempo restante de juego y puntos obtenidos
-            cv2.putText(frame, f'Time: {config.game_time:.2f} - Points: {counter}', (10, 30), cv2.FONT_HERSHEY_SIMPLEX, 1, (0, 255, 0), 2)
+            cv2.putText(frame, f'Time: {config.game_time:.2f}', (10, 30), cv2.FONT_HERSHEY_SIMPLEX, 1, (0, 255, 0), 2)
 
             # Mostrar información de FPS, Resolución y tamaño del buffer
             cv2.putText(
@@ -167,7 +140,6 @@ def game(args):
             
             if config.game_time <= 0:
                 frame = np.zeros((int(cap.get(cv2.CAP_PROP_FRAME_HEIGHT)), int(cap.get(cv2.CAP_PROP_FRAME_WIDTH)), 3), dtype=np.uint8)
-                cv2.putText(frame, f'Score: {final_counter} points', (180, 80), cv2.FONT_HERSHEY_SIMPLEX, 1, (0, 255, 0), 2)
                 cv2.putText(frame, f'Press Enter to continue ...', (120, 160), cv2.FONT_HERSHEY_SIMPLEX, 1, (0, 255, 0), 2)
                 cv2.putText(frame, f'Press ESC to exit', (180, 240), cv2.FONT_HERSHEY_SIMPLEX, 1, (255, 128, 0), 2)
 
