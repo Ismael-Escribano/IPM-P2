@@ -7,6 +7,12 @@ from config import config
 import argparse
 import random
 
+FRAMES_PARA_TERMINAR = 15
+DURACION_ANIM = 1.0
+ALINEAR_X = True
+TIEMPO_PARTIDA = 120
+FRAMES_PARA_BORRAR = 15
+
 def main() -> None:
     parser = argparse.ArgumentParser()
     parser.add_argument('-r', '--resolution', nargs=2, metavar=("Width", "Height"), type=int, help="Fuerza la resolución de la camara.")
@@ -78,6 +84,46 @@ def dibujar_divisoria(frame, color=(200, 200, 200)):
     cv2.putText(frame, "Zona de dibujo", (10, y - 10),
                 cv2.FONT_HERSHEY_SIMPLEX, 0.6, color, 1)
 
+def mascara_contorno(puntos, w, h, grosor=1):
+    m = np.zeros((h, w), dtype=np.uint8)
+    cv2.polylines(m, [puntos], True, 255, grosor)
+    return m
+
+def puntuar(silueta_pts, trazos, w, h, tolerancia=15):
+    validos = [np.array(s, dtype=np.int32) for s in trazos if len(s) > 1]
+    if not validos:
+        return 0
+
+    objetivo = mascara_contorno(silueta_pts, w, h)
+    trazo = np.zeros((h, w), dtype=np.uint8)
+    cv2.polylines(trazo, validos, False, 255, 1)
+
+    dist_a_objetivo = cv2.distanceTransform(255 - objetivo, cv2.DIST_L2, 3)
+    dist_a_trazo = cv2.distanceTransform(255 - trazo, cv2.DIST_L2, 3)
+
+    d1 = dist_a_objetivo[trazo > 0]
+    precision = np.mean(d1 <= tolerancia) if d1.size else 0.0
+    d2 = dist_a_trazo[objetivo > 0]
+    cobertura = np.mean(d2 <= tolerancia) if d2.size else 0.0
+
+    if precision + cobertura == 0:
+        return 0
+    return round(100 * 2 * precision * cobertura / (precision + cobertura))
+
+def bbox_centro(trazos):
+    pts = np.array([p for s in trazos for p in s])
+    (x0, y0), (x1, y1) = pts.min(axis=0), pts.max(axis=0)
+    return (x0 + x1) / 2, (y0 + y1) / 2
+
+def desplazar(trazos, dx, dy):
+    return [[(x + dx, y + dy) for x, y in s] for s in trazos]
+
+def dibujar_trazos(frame, trazos, offset=(0, 0), color=(0, 255, 255), grosor=3):
+    for s in trazos:
+        if len(s) > 1:
+            pts = np.array(desplazar([s], *offset)[0], dtype=np.int32)
+            cv2.polylines(frame, [pts], False, color, grosor)
+
 def game(args):
     #Para lo de las manos
     BaseOptions = mp.tasks.BaseOptions
@@ -116,6 +162,20 @@ def game(args):
 
         silueta = None
 
+        estado = "dibujando"
+        trazos = []
+        trazo_actual = None
+        frames_sin_dedo = 0
+        frames_pulgar = 0
+        desplazamiento = (0, 0)
+        t_anim = t_resultado = 0
+        ultima_puntuacion = 0
+        puntos_total = 0
+        figuras_hechas=0
+        key = 0
+        frames_borrar = 0
+        t_borrado = 0
+
         while cap.isOpened():
             ret, frame = cap.read()
             if not ret:
@@ -141,41 +201,109 @@ def game(args):
             dibujar_divisoria(frame)
             dibujar_silueta(frame, silueta)
 
-            # Ejecutar detección
+                        # Ejecutar detección
             result = landmarker.recognize_for_video(mp_image, timestamp)
             timestamp += frame_ms
-            if result.gestures:
-                for i, gestos in enumerate(result.gestures):
-                    mano = result.handedness[i][0].category_name
-                    gesto = gestos[0]
-                    print(f"{mano}: {gesto.category_name} ({gesto.score:.2f})")
 
-                # Dibujar landmarks si los hay
-                if result.hand_landmarks:
-                    for person_landmarks in result.hand_landmarks:  # para mantener tu estructura
-                        h, w, _ = frame.shape
+            # --- Qué hace la mano ---
+            punta = None
+            pulgar_arriba = False
+            pulgar_abajo = False
+            for i, gestos in enumerate(result.gestures):
+                nombre = gestos[0].category_name
+                lm = result.hand_landmarks[i]
+                if nombre == "Pointing_Up" and punta is None:
+                    punta = (int(lm[8].x * w_f), int(lm[8].y * h_f))
+                elif nombre == "Thumb_Up":
+                    pulgar_arriba = True
+                elif nombre == "Thumb_Down":
+                    pulgar_abajo = True
 
-                        # Dibuja líneas entre los landmarks
-                        for connection in mp_hands.HAND_CONNECTIONS:
-                            start_idx, end_idx = connection
-                            start = person_landmarks[start_idx]
-                            end = person_landmarks[end_idx]
+            y_div = h_f // 2
+            offset = (0, 0)
 
-                            x1, y1 = int(start.x * w), int(start.y * h)
-                            x2, y2 = int(end.x * w), int(end.y * h)
+            # --- Máquina de estados ---
+            if estado == "dibujando":
+                if punta is not None and punta[1] < y_div:
+                    frames_sin_dedo = 0
+                    if trazo_actual is None:
+                        trazo_actual = []
+                        trazos.append(trazo_actual)
+                    trazo_actual.append(punta)
+                else:
+                    frames_sin_dedo += 1
+                    if frames_sin_dedo > 4:      # tolera parpadeos del gesto
+                        trazo_actual = None      # el siguiente trazo será nuevo
 
-                            cv2.line(frame, (x1, y1), (x2, y2), (255, 0, 0), 2)
+                frames_pulgar = frames_pulgar + 1 if pulgar_arriba else 0
+                terminar = frames_pulgar >= FRAMES_PARA_TERMINAR or key == 32  # espacio
 
-                        # Dibuja los puntos (landmarks)
-                        for idx, landmark in enumerate(person_landmarks):
-                            x, y = int(landmark.x * w), int(landmark.y * h)
-                            cv2.circle(frame, (x, y), 3, (0, 255, 0), -1)
+                validos = [s for s in trazos if len(s) > 1]
+                if terminar and validos:
+                    cx, cy = bbox_centro(validos)
+                    dx = silueta["centro"][0] - cx if ALINEAR_X else 0
+                    dy = silueta["centro"][1] - cy
+                    desplazamiento = (dx, dy)
+                    trazos = validos
+                    trazo_actual = None
+                    frames_pulgar = 0
+                    t_anim = time.time()
+                    estado = "bajando"
 
-                        # El 8 es la punta del índice y el 4 la del pulgar
-                        landmarks_points = [(person_landmarks[8].x, person_landmarks[8].y)]
-                        for landmark in landmarks_points:
-                            h, w, _ = frame.shape
-                            x, y = int(landmark[0] * w), int(landmark[1] * h)
+                frames_borrar = frames_borrar + 1 if pulgar_abajo else 0
+                if frames_borrar >= FRAMES_PARA_BORRAR:
+                    trazos = []
+                    trazo_actual = None
+                    frames_sin_dedo = 0
+                    frames_borrar = 0
+                    t_borrado = time.time()
+                if time.time() - t_borrado < 1.0:
+                    cv2.putText(frame, "Dibujo borrado", (w_f // 2 - 100, h_f // 2 - 40),
+                                cv2.FONT_HERSHEY_SIMPLEX, 0.8, (0, 128, 255), 2)
+
+            elif estado == "bajando":
+                raw = min((time.time() - t_anim) / DURACION_ANIM, 1.0)
+                p = 1 - (1 - raw) ** 3           # frena al llegar
+                offset = (desplazamiento[0] * p, desplazamiento[1] * p)
+                if raw >= 1.0:
+                    finales = desplazar(trazos, *desplazamiento)
+                    ultima_puntuacion = puntuar(silueta["puntos"], finales, w_f, h_f)
+                    puntos_total += ultima_puntuacion
+                    figuras_hechas += 1
+                    t_resultado = time.time()
+                    estado = "resultado"
+
+            elif estado == "resultado":
+                offset = desplazamiento
+                cv2.putText(frame, f"Puntuacion: {ultima_puntuacion}",
+                            (w_f // 2 - 130, h_f // 2 - 40),
+                            cv2.FONT_HERSHEY_SIMPLEX, 1, (0, 255, 255), 2)
+                if time.time() - t_resultado > 2.5:
+                    silueta = None               # se genera otra al inicio del bucle
+                    trazos = []
+                    estado = "dibujando"
+
+            # --- Dibujar trazos y punta del dedo ---
+            dibujar_trazos(frame, trazos, offset)
+            if punta is not None:
+                color = (0, 255, 0) if punta[1] < y_div else (0, 0, 255)
+                cv2.circle(frame, punta, 8, color, 2)
+
+            # --- Landmarks de la mano ---
+            for person_landmarks in result.hand_landmarks:
+                for start_idx, end_idx in mp_hands.HAND_CONNECTIONS:
+                    s, e = person_landmarks[start_idx], person_landmarks[end_idx]
+                    cv2.line(frame, (int(s.x * w_f), int(s.y * h_f)),
+                             (int(e.x * w_f), int(e.y * h_f)), (255, 0, 0), 2)
+                for lm_pt in person_landmarks:
+                    cv2.circle(frame, (int(lm_pt.x * w_f), int(lm_pt.y * h_f)), 3, (0, 255, 0), -1)
+
+            # --- Textos de ayuda ---
+            ayuda = {"dibujando": "Indice arriba = dibujar | Pulgar arriba = terminar | Pulgar abajo = borrar",
+                     "bajando": "", "resultado": ""}[estado]
+            cv2.putText(frame, ayuda, (10, h_f - 30), cv2.FONT_HERSHEY_SIMPLEX, 0.5, (255, 255, 255), 1)
+            cv2.putText(frame, f"Puntos: {puntos_total}", (w_f - 170, 30),
+                        cv2.FONT_HERSHEY_SIMPLEX, 0.8, (0, 255, 255), 2)
 
 
             # Mostrar tiempo restante de juego y puntos obtenidos
@@ -191,15 +319,25 @@ def game(args):
                 (0, 255, 0),
                 1
             )
-            config.game_time -= t
+            if estado=="dibujando":
+                config.game_time -= t
             
             if config.game_time <= 0:
-                frame = np.zeros((int(cap.get(cv2.CAP_PROP_FRAME_HEIGHT)), int(cap.get(cv2.CAP_PROP_FRAME_WIDTH)), 3), dtype=np.uint8)
-                cv2.putText(frame, f'Press Enter to continue ...', (120, 160), cv2.FONT_HERSHEY_SIMPLEX, 1, (0, 255, 0), 2)
-                cv2.putText(frame, f'Press ESC to exit', (180, 240), cv2.FONT_HERSHEY_SIMPLEX, 1, (255, 128, 0), 2)
+                frame = np.zeros((h_f, w_f, 3), dtype=np.uint8)
 
-            else:
-                final_counter = counter
+                def centrado(texto, y, escala, color, grosor=2):
+                    (tw, _), _ = cv2.getTextSize(texto, cv2.FONT_HERSHEY_SIMPLEX, escala, grosor)
+                    cv2.putText(frame, texto, ((w_f - tw) // 2, y),
+                                cv2.FONT_HERSHEY_SIMPLEX, escala, color, grosor)
+
+                media = puntos_total / figuras_hechas if figuras_hechas else 0
+
+                centrado("Tiempo agotado", 90, 1.2, (0, 255, 0), 3)
+                centrado(f"Puntuacion final: {puntos_total}", 170, 1.0, (0, 255, 255))
+                centrado(f"Figuras completadas: {figuras_hechas}", 220, 0.8, (255, 255, 255))
+                centrado(f"Media por figura: {media:.0f}", 260, 0.8, (255, 255, 255))
+                centrado("Enter: jugar de nuevo", 340, 0.8, (0, 255, 0))
+                centrado("ESC: salir", 380, 0.8, (255, 128, 0))
 
             # Mostrar resultado
             cv2.imshow("Pose Landmarker", frame)
@@ -208,15 +346,16 @@ def game(args):
             if key == 27:
                 break
             if config.game_time <= 0 and key == 13:
-                config.game_time = 20
+                config.game_time = 120
                 silueta = None
+                trazos = []
+                trazo_actual = None
+                estado = "dibujando"
+                puntos_total = 0
                 counter = 0
                 sum_t = 0
                 last_time = time.time()
 
-            # Tecla ESC para salir
-            if cv2.waitKey(1) & 0xFF == 27:
-                sys.exit(0)
 
         cap.release()
         cv2.destroyAllWindows()
