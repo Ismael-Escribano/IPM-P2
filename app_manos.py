@@ -1,4 +1,4 @@
-import sys
+from pathlib import Path
 import cv2
 import mediapipe as mp
 import numpy as np
@@ -6,7 +6,7 @@ import time
 from config import config
 import argparse
 import random
-
+import questionary
 
 def main() -> None:
     parser = argparse.ArgumentParser()
@@ -120,6 +120,13 @@ def dibujar_trazos(frame, trazos, offset=(0, 0), color=(0, 255, 255), grosor=3):
             cv2.polylines(frame, [pts], False, color, grosor)
 
 def game(args):
+    if not config.model_path.exists():
+        print("El modelo 'model_recognizer.task' no está descargado")
+        if questionary.confirm("¿Desea descargarlo ahora?").ask():
+            from download_models import download_models
+            download_models()
+        else:
+            raise FileNotFoundError("No es posible iniciar el juego sin el modelo 'model_recognizer.task'")
     #Para lo de las manos
     BaseOptions = mp.tasks.BaseOptions
     GestureRecognizer = mp.tasks.vision.GestureRecognizer
@@ -127,11 +134,11 @@ def game(args):
     VisionRunningMode = mp.tasks.vision.RunningMode
 
     options = GestureRecognizerOptions(
-        base_options=BaseOptions(model_asset_path="models/gesture_recognizer.task"),
+        base_options=BaseOptions(model_asset_path=config.model_path),
         running_mode=VisionRunningMode.VIDEO,
         num_hands=2,
     )
-
+    
     # Inicializar landmarker
     with GestureRecognizer.create_from_options(options) as landmarker:
         cap = cv2.VideoCapture(0)  # Abrir cámara
@@ -204,6 +211,7 @@ def game(args):
             punta = None
             pulgar_arriba = False
             pulgar_abajo = False
+            ajustes = False
             for i, gestos in enumerate(result.gestures):
                 nombre = gestos[0].category_name
                 lm = result.hand_landmarks[i]
@@ -213,6 +221,8 @@ def game(args):
                     pulgar_arriba = True
                 elif nombre == "Thumb_Down":
                     pulgar_abajo = True
+                elif nombre == "ILoveYou":
+                    ajustes = True
 
             y_div = h_f // 2
             offset = (0, 0)
@@ -277,6 +287,10 @@ def game(args):
                     silueta = None
                     trazos = []
                     estado = "dibujando"
+
+            # TODO: pausar juego en con el gesto "ILoveYou"
+            elif estado == "pausado":
+                ...
 
             # --- Dibujar trazos y punta del dedo ---
             dibujar_trazos(frame, trazos, offset)
