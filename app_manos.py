@@ -84,7 +84,7 @@ def mascara_contorno(puntos, w, h, grosor=1):
     cv2.polylines(m, [puntos], True, 255, grosor)
     return m
 
-def puntuar(silueta_pts, trazos, w, h, tolerancia=15):
+def puntuar(silueta_pts, trazos, w, h, tolerancia=10):
     validos = [np.array(s, dtype=np.int32) for s in trazos if len(s) > 1]
     if not validos:
         return 0
@@ -144,7 +144,7 @@ def game(args):
         if args.buffer:
             cap.set(cv2.CAP_PROP_BUFFERSIZE, args.buffer)
         fps = cap.get(cv2.CAP_PROP_FPS)
-        if fps == 0:  # seguridad si la cámara no da fps
+        if fps == 0:
             fps = 30
 
         mp_hands = mp.solutions.hands
@@ -227,11 +227,11 @@ def game(args):
                     trazo_actual.append(punta)
                 else:
                     frames_sin_dedo += 1
-                    if frames_sin_dedo > 4:      # tolera parpadeos del gesto
-                        trazo_actual = None      # el siguiente trazo será nuevo
+                    if frames_sin_dedo > 4:
+                        trazo_actual = None
 
                 frames_pulgar = frames_pulgar + 1 if pulgar_arriba else 0
-                terminar = frames_pulgar >= config.frames_para_terminar or key == 32  # espacio
+                terminar = frames_pulgar >= config.frames_para_terminar or key == 32
 
                 validos = [s for s in trazos if len(s) > 1]
                 if terminar and validos:
@@ -258,7 +258,7 @@ def game(args):
 
             elif estado == "bajando":
                 raw = min((time.time() - t_anim) / config.duracion_anim, 1.0)
-                p = 1 - (1 - raw) ** 3           # frena al llegar
+                p = 1 - (1 - raw) ** 3
                 offset = (desplazamiento[0] * p, desplazamiento[1] * p)
                 if raw >= 1.0:
                     finales = desplazar(trazos, *desplazamiento)
@@ -274,7 +274,7 @@ def game(args):
                             (w_f // 2 - 130, h_f // 2 - 40),
                             cv2.FONT_HERSHEY_SIMPLEX, 1, (0, 255, 255), 2)
                 if time.time() - t_resultado > 2.5:
-                    silueta = None               # se genera otra al inicio del bucle
+                    silueta = None
                     trazos = []
                     estado = "dibujando"
 
