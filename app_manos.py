@@ -265,7 +265,7 @@ def game(args):
                     and frames_gesto["ILoveYou"] >= config.frames_pausa):
                 estado = "pausado"
                 trazo_actual = None
-                frames_indice = 0
+                frames_con_dedo = 0
                 frames_pulgar = 0
                 frames_borrar = 0
                 esperando_soltar = True
@@ -410,12 +410,15 @@ def game(args):
                     last_time = time.time()
                     reiniciar_contadores()
 
-            elif estado == "pausado":
-                panel_texto(frame, ["PAUSA"], 150, color=(0, 255, 255))
+            elif estado == "pausado":                
                 config.show_config_menu()
                 estado = "dibujando"
                 esperando_soltar = True
                 reiniciar_contadores()
+                # descartar 15 frames mientras pygame cierra la ventana
+                for _ in range(15):
+                    cap.grab()
+                last_time = time.time()
 
             if iniciar:
                 estado = "preparado"
@@ -436,7 +439,7 @@ def game(args):
                     color = (0, 0, 255)
                 elif trazo_actual is None:
                     color = (0, 255, 255)
-                    progreso = min(frames_con_dedo / 15, 1.0)
+                    progreso = min(frames_con_dedo / config.frames_delay_dibujo, 1.0)
                     cv2.ellipse(frame, punta, (14, 14), -90, 0, int(360 * progreso), color, 3)
                 else:
                     color = (0, 255, 0)
@@ -494,6 +497,9 @@ def game(args):
 
             # Mostrar resultado
             cv2.imshow("Pose Landmarker", frame)
+            # Para evitar que wslG ponga la ventana donde le apetezca
+            if args.wsl:
+                cv2.moveWindow("Pose Landmarker", 100, 100)
 
             key = cv2.waitKey(1) & 0xFF
             if key == 27:
@@ -514,6 +520,7 @@ def game(args):
 
         cap.release()
         cv2.destroyAllWindows()
+        config.save_configs()
 
 if __name__ == '__main__':
     main()

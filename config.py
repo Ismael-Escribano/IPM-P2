@@ -4,12 +4,15 @@ import pygame_widgets
 from pygame_widgets.button import Button
 from pygame_widgets.dropdown import Dropdown
 from pygame_widgets.widget import WidgetHandler
+import json
 
 class Config:
     def __init__(self):
+        # Configuración por defecto
         self.model_path = Path(__file__).parent / 'models' / 'gesture_recognizer.task'
+        self.config_file = Path(__file__).parent / 'config.json'
         self.padding = 100
-        self.game_time = 60    # Duración del juego en segundos
+        self.game_time = 120
         self.frames_para_terminar = 15
         self.duracion_anim = 1.0
         self.alinear_x = True
@@ -18,13 +21,13 @@ class Config:
         self.frames_delay_dibujo = 15
         self.frames_pausa = 15
         self.pasos_tutorial = [
-            {"gesto": "Pointing_Up", "titulo": "1/4  Dibujar",
+            {"gesto": "Pointing_Up", "titulo": "Paso 1/4  Dibujar",
             "texto": ["Levanta el dedo indice", "y dibuja en la zona de arriba"]},
-            {"gesto": "Thumb_Up", "titulo": "2/4  Terminar",
+            {"gesto": "Thumb_Up", "titulo": "Paso 2/4  Terminar",
             "texto": ["Pulgar arriba cuando acabes:", "tu dibujo bajara hasta la figura"]},
-            {"gesto": "Thumb_Down", "titulo": "3/4  Borrar",
+            {"gesto": "Thumb_Down", "titulo": "Paso 3/4  Borrar",
             "texto": ["Pulgar abajo para borrar", "el dibujo y empezar de nuevo"]},
-            {"gesto": "ILoveYou", "titulo": "4/4  Menu de configuracin",
+            {"gesto": "ILoveYou", "titulo": "Paso 4/4  Menu de configuracin",
             "texto": ["Extiende el pulgar y los", "dedos indice y menique para", "abrir el menu de configuracion"]},
             ]
         self.frames_tutorial = 10
@@ -33,13 +36,41 @@ class Config:
 
         self._defaults = {
             "padding": self.padding,
-            "game_time": self.game_time,
             "tiempo_partida": self.tiempo_partida,
             "frames_para_terminar": self.frames_para_terminar,
             "frames_para_borrar": self.frames_para_borrar,
+            "frames_delay_dibujo": self.frames_delay_dibujo,
             "duracion_anim": self.duracion_anim,
             "alinear_x": self.alinear_x,
         }
+           
+        # Cargar configuraciones (si hay)
+        self.load_configs()
+        
+    def load_configs(self):
+        if not self.config_file.exists():
+            return
+        try:
+            with open(self.config_file, 'r', encoding='utf-8') as f:
+                datos = json.load(f)
+        except (OSError, json.JSONDEcodeERROR) as e:
+            print(f'No se pudo leer el archivo de configuración ({self.config_file.name})')
+            return
+        
+        for clave, valor in datos.items():
+            if clave in self._defaults and isinstance(valor, (int, float, bool)):
+                setattr(self, clave, valor)
+        
+        self.game_time = self.tiempo_partida
+        
+    def save_configs(self):
+        datos = {clave: getattr(self, clave) for clave in self._defaults}
+        try:
+            with open(self.config_file, 'w', encoding='utf-8') as f:
+                json.dump(datos, f, indent=4)
+        except OSError as e:
+            print(f'No se pudo guardar el archivo de configuración ({self.config_file.name}): {e}')
+        
         
     def show_config_menu(self):
         pygame.init()
@@ -51,10 +82,10 @@ class Config:
         # (atributo, etiqueta, texto visible, valores reales)
         opciones = [
             ("padding", "Padding:", ["50", "100", "150", "200"], [50, 100, 150, 200]),
-            ("game_time", "Duración del juego (s):", ["60", "120", "180", "240"], [60, 120, 180, 240]),
             ("tiempo_partida", "Tiempo partida (s):", ["60", "120", "180", "240"], [60, 120, 180, 240]),
             ("frames_para_terminar", "Frames para terminar:", ["5", "10", "15", "30"], [5, 10, 15, 30]),
             ("frames_para_borrar", "Frames para borrar:", ["5", "10", "15", "30"], [5, 10, 15, 30]),
+            ("frames_delay_dibujo", "Frames de espera al dibujar:", ["5", "10", "15", "30"], [5, 10, 15, 30]),
             ("duracion_anim", "Duración animación (s):", ["0.5", "1.0", "1.5", "2.0"], [0.5, 1.0, 1.5, 2.0]),
             ("alinear_x", "Alinear eje X:", ["Sí", "No"], [True, False]),
         ]
