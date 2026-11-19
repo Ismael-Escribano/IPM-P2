@@ -119,6 +119,17 @@ def dibujar_trazos(frame, trazos, offset=(0, 0), color=(0, 255, 255), grosor=3):
             pts = np.array(desplazar([s], *offset)[0], dtype=np.int32)
             cv2.polylines(frame, [pts], False, color, grosor)
 
+def panel_texto(frame, lineas, y_inicio, escala=0.6, color=(255, 255, 255)):
+    h, w = frame.shape[:2]
+    overlay = frame.copy()
+    cv2.rectangle(overlay, (20, y_inicio - 28),
+                  (w - 20, y_inicio + 32 * (len(lineas) - 1) + 14), (0, 0, 0), -1)
+    cv2.addWeighted(overlay, 0.6, frame, 0.4, 0, frame)
+    for k, linea in enumerate(lineas):
+        (tw, _), _ = cv2.getTextSize(linea, cv2.FONT_HERSHEY_SIMPLEX, escala, 2)
+        cv2.putText(frame, linea, ((w - tw) // 2, y_inicio + 32 * k),
+                    cv2.FONT_HERSHEY_SIMPLEX, escala, color, 2)
+
 def game(args):
     if not config.model_path.exists():
         print("El modelo 'model_recognizer.task' no está descargado")
@@ -164,7 +175,7 @@ def game(args):
 
         silueta = None
 
-        estado = "dibujando"
+        estado = "pantalla_inicial"
         trazos = []
         trazo_actual = None
         frames_sin_dedo = 0
@@ -177,6 +188,18 @@ def game(args):
         key = 0
         frames_borrar = 0
         t_borrado = 0
+        paso_tutorial = 0
+        t_paso_ok = 0
+        t_cambio = time.time()
+        t_inicio=0
+        frames_gesto = {"Thumb_Up": 0, "Thumb_Down": 0, "Pointing_Up": 0, "ILoveYou": 0}
+
+        def sostenido(gesto):
+            return frames_gesto[gesto] >= config.frames_tutorial
+
+        def reiniciar_contadores():
+            for g in frames_gesto:
+                frames_gesto[g] = 0
 
         while cap.isOpened():
             ret, frame = cap.read()
@@ -224,11 +247,74 @@ def game(args):
                 elif nombre == "ILoveYou":
                     ajustes = True
 
+            gestos_vistos = {g[0].category_name for g in result.gestures}
+            for g in frames_gesto:
+                frames_gesto[g] = frames_gesto[g] + 1 if g in gestos_vistos else 0
+
+            iniciar=False
             y_div = h_f // 2
             offset = (0, 0)
+            en_pausa = time.time() - t_cambio < config.pausa_transicion_tutorial
 
             # --- Máquina de estados ---
-            if estado == "dibujando":
+            if estado == "pantalla_inicial":
+                panel_texto(frame, ["Quieres ver el tutorial?",
+                                    "Pulgar arriba = Si  |  Pulgar abajo = No"], 60)
+                if not en_pausa:
+                    if sostenido("Thumb_Up"):
+                        estado = "tutorial_intro"
+                        t_cambio = time.time()
+                        reiniciar_contadores()
+                    elif sostenido("Thumb_Down"):
+                        iniciar = True
+            elif estado == "tutorial_intro":
+                panel_texto(frame, ["OBJETIVO DEL JUEGO",
+                                    "En la parte inferior de la pantalla aparece",  
+                                    "la silueta de una figura sin relleno.",
+                                    "Dibujala en la mitad superior con el dedo:",
+                                    "tu dibujo bajara y se puntuara lo bien",
+                                    "que sigue el contorno y que no pintes de mas.",
+                                    "Pulgar arriba para continuar"], 50)
+                if not en_pausa and sostenido("Thumb_Up"):
+                    estado = "tutorial"
+                    paso_tutorial = 0
+                    t_paso_ok = 0
+                    t_cambio = time.time()
+                    reiniciar_contadores()
+            elif estado == "tutorial":
+                paso = config.pasos_tutorial[paso_tutorial]
+
+                if punta is not None and punta[1] < y_div:
+                    frames_sin_dedo = 0
+                    if trazo_actual is None:
+                        trazo_actual = []
+                        trazos.append(trazo_actual)
+                    trazo_actual.append(punta)
+                else:
+                    frames_sin_dedo += 1
+                    if frames_sin_dedo > 4:
+                        trazo_actual = None
+
+                if t_paso_ok == 0:
+                    panel_texto(frame, [paso["titulo"]] + paso["texto"], 50)
+                    dibujado = sum(len(s) for s in trazos) > 20
+                    cumplido = sostenido(paso["gesto"]) and (
+                        paso["gesto"] != "Pointing_Up" or dibujado)
+                    if not en_pausa and cumplido:
+                        t_paso_ok = time.time()
+                        if paso["gesto"] == "Thumb_Down":
+                            trazos = []
+                            trazo_actual = None
+                else:
+                    panel_texto(frame, ["Correcto!"], 50, 0.9, (0, 255, 0))
+                    if time.time() - t_paso_ok > 1.2:
+                        paso_tutorial += 1
+                        t_paso_ok = 0
+                        t_cambio = time.time()
+                        reiniciar_contadores()
+                        if paso_tutorial >= len(config.pasos_tutorial):
+                            iniciar = True
+            elif estado == "dibujando":
                 if punta is not None and punta[1] < y_div:
                     frames_sin_dedo = 0
                     if trazo_actual is None:
@@ -288,9 +374,31 @@ def game(args):
                     trazos = []
                     estado = "dibujando"
 
+            elif estado == "preparado":
+                restante = config.cuenta_atras - (time.time() - t_inicio)
+                panel_texto(frame, ["PREPARATE PARA INICIAR LA PARTIDA", f"{int(np.ceil(restante))}"],150, color=(0, 255, 255))
+
+                if restante <= 0:
+                    estado = "dibujando"
+                    t_cambio = time.time()
+                    last_time = time.time()
+                    reiniciar_contadores()
+
             # TODO: pausar juego en con el gesto "ILoveYou"
             elif estado == "pausado":
                 ...
+
+            if iniciar:
+                estado = "preparado"
+                t_inicio = time.time()
+                trazos = []
+                trazo_actual = None
+                silueta = None
+                config.game_time = config.tiempo_partida
+                frames_sin_dedo = 0
+                reiniciar_contadores()
+                t_cambio = time.time()
+                last_time = time.time()
 
             # --- Dibujar trazos y punta del dedo ---
             dibujar_trazos(frame, trazos, offset)
@@ -309,7 +417,7 @@ def game(args):
 
             # --- Textos de ayuda ---
             ayuda = {"dibujando": "Indice arriba = dibujar | Pulgar arriba = terminar | Pulgar abajo = borrar",
-                     "bajando": "", "resultado": ""}[estado]
+                     "bajando": "", "resultado": ""}.get(estado, "")
             cv2.putText(frame, ayuda, (10, h_f - 30), cv2.FONT_HERSHEY_SIMPLEX, 0.5, (255, 255, 255), 1)
             cv2.putText(frame, f"Puntos: {puntos_total}", (w_f - 170, 30),
                         cv2.FONT_HERSHEY_SIMPLEX, 0.8, (0, 255, 255), 2)
@@ -355,13 +463,15 @@ def game(args):
             if key == 27:
                 break
             if config.game_time <= 0 and key == 13:
-                config.game_time = 120
+                config.game_time = config.tiempo_partida
                 silueta = None
                 trazos = []
                 trazo_actual = None
-                estado = "dibujando"
+                estado = "preparado"
+                t_inicio=time.time()
                 puntos_total = 0
                 counter = 0
+                figuras_hechas=0
                 sum_t = 0
                 last_time = time.time()
 

@@ -9,12 +9,25 @@ class Config:
     def __init__(self):
         self.model_path = Path(__file__).parent / 'models' / 'gesture_recognizer.task'
         self.padding = 100
-        self.game_time = 120     # Duración del juego en segundos
+        self.game_time = 60    # Duración del juego en segundos
         self.frames_para_terminar = 15
         self.duracion_anim = 1.0
         self.alinear_x = True
         self.tiempo_partida = 120
         self.frames_para_borrar = 15
+        self.pasos_tutorial = [
+            {"gesto": "Pointing_Up", "titulo": "1/4  Dibujar",
+            "texto": ["Levanta el dedo indice", "y dibuja en la zona de arriba"]},
+            {"gesto": "Thumb_Up", "titulo": "2/4  Terminar",
+            "texto": ["Pulgar arriba cuando acabes:", "tu dibujo bajara hasta la figura"]},
+            {"gesto": "Thumb_Down", "titulo": "3/4  Borrar",
+            "texto": ["Pulgar abajo para borrar", "el dibujo y empezar de nuevo"]},
+            {"gesto": "ILoveYou", "titulo": "4/4  Menu de configuracin",
+            "texto": ["Extiende el pulgar y los", "dedos indice y menique para", "abrir el menu de configuracion"]},
+            ]
+        self.frames_tutorial = 10
+        self.pausa_transicion_tutorial = 1.2 # Esto son segundos, no frames.
+        self.cuenta_atras = 3
 
         self._defaults = {
             "padding": self.padding,
