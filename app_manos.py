@@ -178,7 +178,9 @@ def game(args):
         estado = "pantalla_inicial"
         trazos = []
         trazo_actual = None
+        esperando_soltar = False
         frames_sin_dedo = 0
+        frames_con_dedo = 0
         frames_pulgar = 0
         desplazamiento = (0, 0)
         t_anim = t_resultado = 0
@@ -251,10 +253,23 @@ def game(args):
             for g in frames_gesto:
                 frames_gesto[g] = frames_gesto[g] + 1 if g in gestos_vistos else 0
 
+            if frames_gesto["ILoveYou"] == 0:
+                esperando_soltar = False
+
             iniciar=False
             y_div = h_f // 2
             offset = (0, 0)
             en_pausa = time.time() - t_cambio < config.pausa_transicion_tutorial
+
+            if (estado == "dibujando" and not esperando_soltar
+                    and frames_gesto["ILoveYou"] >= config.frames_pausa):
+                estado = "pausado"
+                trazo_actual = None
+                frames_indice = 0
+                frames_pulgar = 0
+                frames_borrar = 0
+                esperando_soltar = True
+                reiniciar_contadores()
 
             # --- Máquina de estados ---
             if estado == "pantalla_inicial":
@@ -287,13 +302,18 @@ def game(args):
                 if punta is not None and punta[1] < y_div:
                     frames_sin_dedo = 0
                     if trazo_actual is None:
-                        trazo_actual = []
-                        trazos.append(trazo_actual)
-                    trazo_actual.append(punta)
+                        frames_con_dedo += 1
+                        if frames_con_dedo >= config.frames_delay_dibujo:
+                            trazo_actual = []
+                            trazos.append(trazo_actual)
+
+                    if trazo_actual is not None:
+                        trazo_actual.append(punta)
                 else:
                     frames_sin_dedo += 1
                     if frames_sin_dedo > 4:
                         trazo_actual = None
+                        frames_con_dedo = 0
 
                 if t_paso_ok == 0:
                     panel_texto(frame, [paso["titulo"]] + paso["texto"], 50)
@@ -318,13 +338,18 @@ def game(args):
                 if punta is not None and punta[1] < y_div:
                     frames_sin_dedo = 0
                     if trazo_actual is None:
-                        trazo_actual = []
-                        trazos.append(trazo_actual)
-                    trazo_actual.append(punta)
+                        frames_con_dedo += 1
+                        if frames_con_dedo >= config.frames_delay_dibujo:
+                            trazo_actual = []
+                            trazos.append(trazo_actual)
+
+                    if trazo_actual is not None:
+                        trazo_actual.append(punta)
                 else:
                     frames_sin_dedo += 1
                     if frames_sin_dedo > 4:
                         trazo_actual = None
+                        frames_con_dedo = 0
 
                 frames_pulgar = frames_pulgar + 1 if pulgar_arriba else 0
                 terminar = frames_pulgar >= config.frames_para_terminar or key == 32
@@ -347,6 +372,7 @@ def game(args):
                     trazo_actual = None
                     frames_sin_dedo = 0
                     frames_borrar = 0
+                    frames_con_dedo = 0
                     t_borrado = time.time()
                 if time.time() - t_borrado < 1.0:
                     cv2.putText(frame, "Dibujo borrado", (w_f // 2 - 100, h_f // 2 - 40),
@@ -384,9 +410,12 @@ def game(args):
                     last_time = time.time()
                     reiniciar_contadores()
 
-            # TODO: pausar juego en con el gesto "ILoveYou"
             elif estado == "pausado":
-                ...
+                panel_texto(frame, ["PAUSA"], 150, color=(0, 255, 255))
+                config.show_config_menu()
+                estado = "dibujando"
+                esperando_soltar = True
+                reiniciar_contadores()
 
             if iniciar:
                 estado = "preparado"
@@ -403,7 +432,14 @@ def game(args):
             # --- Dibujar trazos y punta del dedo ---
             dibujar_trazos(frame, trazos, offset)
             if punta is not None:
-                color = (0, 255, 0) if punta[1] < y_div else (0, 0, 255)
+                if punta[1] >= y_div:
+                    color = (0, 0, 255)
+                elif trazo_actual is None:
+                    color = (0, 255, 255)
+                    progreso = min(frames_con_dedo / 15, 1.0)
+                    cv2.ellipse(frame, punta, (14, 14), -90, 0, int(360 * progreso), color, 3)
+                else:
+                    color = (0, 255, 0)
                 cv2.circle(frame, punta, 8, color, 2)
 
             # --- Landmarks de la mano ---

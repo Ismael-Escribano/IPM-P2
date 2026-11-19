@@ -15,6 +15,8 @@ class Config:
         self.alinear_x = True
         self.tiempo_partida = 120
         self.frames_para_borrar = 15
+        self.frames_delay_dibujo = 15
+        self.frames_pausa = 15
         self.pasos_tutorial = [
             {"gesto": "Pointing_Up", "titulo": "1/4  Dibujar",
             "texto": ["Levanta el dedo indice", "y dibuja en la zona de arriba"]},
