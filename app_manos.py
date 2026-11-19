@@ -7,11 +7,6 @@ from config import config
 import argparse
 import random
 
-FRAMES_PARA_TERMINAR = 15
-DURACION_ANIM = 1.0
-ALINEAR_X = True
-TIEMPO_PARTIDA = 120
-FRAMES_PARA_BORRAR = 15
 
 def main() -> None:
     parser = argparse.ArgumentParser()
@@ -236,12 +231,12 @@ def game(args):
                         trazo_actual = None      # el siguiente trazo será nuevo
 
                 frames_pulgar = frames_pulgar + 1 if pulgar_arriba else 0
-                terminar = frames_pulgar >= FRAMES_PARA_TERMINAR or key == 32  # espacio
+                terminar = frames_pulgar >= config.frames_para_terminar or key == 32  # espacio
 
                 validos = [s for s in trazos if len(s) > 1]
                 if terminar and validos:
                     cx, cy = bbox_centro(validos)
-                    dx = silueta["centro"][0] - cx if ALINEAR_X else 0
+                    dx = silueta["centro"][0] - cx if config.alinear_x else 0
                     dy = silueta["centro"][1] - cy
                     desplazamiento = (dx, dy)
                     trazos = validos
@@ -251,7 +246,7 @@ def game(args):
                     estado = "bajando"
 
                 frames_borrar = frames_borrar + 1 if pulgar_abajo else 0
-                if frames_borrar >= FRAMES_PARA_BORRAR:
+                if frames_borrar >= config.frames_para_borrar:
                     trazos = []
                     trazo_actual = None
                     frames_sin_dedo = 0
@@ -262,7 +257,7 @@ def game(args):
                                 cv2.FONT_HERSHEY_SIMPLEX, 0.8, (0, 128, 255), 2)
 
             elif estado == "bajando":
-                raw = min((time.time() - t_anim) / DURACION_ANIM, 1.0)
+                raw = min((time.time() - t_anim) / config.duracion_anim, 1.0)
                 p = 1 - (1 - raw) ** 3           # frena al llegar
                 offset = (desplazamiento[0] * p, desplazamiento[1] * p)
                 if raw >= 1.0:

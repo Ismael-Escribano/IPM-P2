@@ -7,5 +7,10 @@ class Config:
         self.game_time = 120     # Duración del juego en segundos
         self.circle_time = 1    # Duración de cada circulo azul antes de que desaparezca
         self.circle_time_radius = 15
+        self.frames_para_terminar = 15
+        self.duracion_anim = 1.0
+        self.alinear_x = False
+        self.tiempo_partida = 120
+        self.frames_para_borrar = 15
 
 config = Config()  # Instancia única
