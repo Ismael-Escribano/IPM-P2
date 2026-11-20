@@ -1,4 +1,3 @@
-from pathlib import Path
 import cv2
 import mediapipe as mp
 import numpy as np
@@ -194,7 +193,7 @@ def game(args):
         t_paso_ok = 0
         t_cambio = time.time()
         t_inicio=0
-        frames_gesto = {"Thumb_Up": 0, "Thumb_Down": 0, "Pointing_Up": 0, "ILoveYou": 0}
+        frames_gesto = {"Thumb_Up": 0, "Thumb_Down": 0, "Pointing_Up": 0, "Victory": 0}
 
         def sostenido(gesto):
             return frames_gesto[gesto] >= config.frames_tutorial
@@ -246,14 +245,14 @@ def game(args):
                     pulgar_arriba = True
                 elif nombre == "Thumb_Down":
                     pulgar_abajo = True
-                elif nombre == "ILoveYou":
+                elif nombre == "Victory":
                     ajustes = True
 
             gestos_vistos = {g[0].category_name for g in result.gestures}
             for g in frames_gesto:
                 frames_gesto[g] = frames_gesto[g] + 1 if g in gestos_vistos else 0
 
-            if frames_gesto["ILoveYou"] == 0:
+            if frames_gesto["Victory"] == 0:
                 esperando_soltar = False
 
             iniciar=False
@@ -262,7 +261,7 @@ def game(args):
             en_pausa = time.time() - t_cambio < config.pausa_transicion_tutorial
 
             if (estado == "dibujando" and not esperando_soltar
-                    and frames_gesto["ILoveYou"] >= config.frames_pausa):
+                    and frames_gesto["Victory"] >= config.frames_pausa):
                 estado = "pausado"
                 trazo_actual = None
                 frames_con_dedo = 0
@@ -412,21 +411,20 @@ def game(args):
 
             elif estado == "pausado":                
                 config.show_config_menu()
-                estado = "dibujando"
                 esperando_soltar = True
-                reiniciar_contadores()
                 # descartar 15 frames mientras pygame cierra la ventana
                 for _ in range(15):
                     cap.grab()
-                last_time = time.time()
+                iniciar = True
 
             if iniciar:
+                if estado != "pausado":
+                    config.game_time = config.tiempo_partida
                 estado = "preparado"
                 t_inicio = time.time()
                 trazos = []
                 trazo_actual = None
                 silueta = None
-                config.game_time = config.tiempo_partida
                 frames_sin_dedo = 0
                 reiniciar_contadores()
                 t_cambio = time.time()
@@ -469,7 +467,7 @@ def game(args):
             cv2.putText(
                 frame,
                 f'{int(cap.get(cv2.CAP_PROP_FPS))} - {int(cap.get(cv2.CAP_PROP_FRAME_WIDTH))}x{int(cap.get(cv2.CAP_PROP_FRAME_HEIGHT))} - {int(cap.get(cv2.CAP_PROP_BUFFERSIZE))}',
-                (10, 470),
+                (10, h_f - 10),
                 cv2.FONT_HERSHEY_COMPLEX_SMALL,
                 1,
                 (0, 255, 0),

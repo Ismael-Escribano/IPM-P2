@@ -27,8 +27,8 @@ class Config:
             "texto": ["Pulgar arriba cuando acabes:", "tu dibujo bajara hasta la figura"]},
             {"gesto": "Thumb_Down", "titulo": "Paso 3/4  Borrar",
             "texto": ["Pulgar abajo para borrar", "el dibujo y empezar de nuevo"]},
-            {"gesto": "ILoveYou", "titulo": "Paso 4/4  Menu de configuracin",
-            "texto": ["Extiende el pulgar y los", "dedos indice y menique para", "abrir el menu de configuracion"]},
+            {"gesto": "Victory", "titulo": "Paso 4/4  Menu de configuracion",
+            "texto": ["Extiende el dedo Indice y ", "Corazon para abrir el", "menu de configuracion"]},
             ]
         self.frames_tutorial = 10
         self.pausa_transicion_tutorial = 1.2 # Esto son segundos, no frames.

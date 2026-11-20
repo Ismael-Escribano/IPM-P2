@@ -42,5 +42,11 @@ Si no descarga el modelo de esta manera se preguntará al usuario si lo quiere i
 
 ## Ejecución
 ```bash
-python app.py
+python app_manos.py
 ```
+La aplicación permite diferentes parametros:
+- `-h` o `--help` $\rightarrow$ Muestra los parametros soportados
+- `-r W H` o `--resolution W H` $\rightarrow$ Fuerza la resolución de la camara (si es posible) a "WxH"
+- `-f N` o `--fps N` $\rightarrow$ Fuerza los FPS de la camara (si es posible) a "N"
+- `-b N` o `--buffer N` $\rightarrow$ Fuerza el tamaño del buffer a "N"
+- `--wsl` $\rightarrow$ Activa un ajuste preestablecido para el uso de una camara en WSL (Resolución 640x480 | FPS 30 | Buffer 2) 
