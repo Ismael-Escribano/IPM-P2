@@ -7,36 +7,30 @@ import argparse
 import random
 import questionary
 
-def main() -> None:
-    parser = argparse.ArgumentParser()
-    parser.add_argument('-r', '--resolution', nargs=2, metavar=("Width", "Height"), type=int, help="Fuerza la resolución de la camara.")
-    parser.add_argument('-f', '--fps', type=int, help="Fuerza los FPS de la camara.")
-    parser.add_argument('-b', '--buffer', type=int, help="Fuerza el tamaño del buffer.")
-    parser.add_argument('--wsl', action="store_true", help="Ajuste preestablecido para la camara en WSL usando usbipd (480p30 - buffer = 2)")
-
-    args = parser.parse_args()
-
-    if args.wsl:
-        args.resolution = (640, 480)
-        args.fps = 30
-        args.buffer = 2
-
-    if args.resolution is not None:
-        args.width = args.resolution[0]
-        args.height = args.resolution[1]
-    
-    exit(game(args))
-
-# L2 Norm entre la mano y el punto objetivo (azul) 
-def calculate_distance(point1, point2) -> float:
-    distance = np.sqrt((point1[0] - point2[0]) ** 2 + (point1[1] - point2[1]) ** 2)
-    return distance
-
 FORMAS = ["circulo", "rectangulo", "cuadrado", "triangulo", "rombo", "estrella"]
 
-def puntos_forma(tipo, cx, cy, r):
+def puntos_forma(tipo: str, cx: float, cy: float, r: float) -> np.ndarray:
+    """
+    Crea los puntos de una forma.
+
+    Parametros
+    ----------
+    tipo: str
+        Forma a dibujar
+    cx: float
+        Punto central (Coordenada X) de la figura
+    xy: float
+        Punto central (Coordenada Y) de la figura
+    r: float
+        Longitud del lado de la figura
+    
+    Devuelve
+    --------
+    np.ndarray
+        Array con los puntos de la figura creada.
+    """
     if tipo == "circulo":
-        return cv2.ellipse2Poly((cx, cy), (r, r), 0, 0, 360, 5)
+        return np.array(cv2.ellipse2Poly((cx, cy), (r, r), 0, 0, 360, 5), dtype=np.int32)
     if tipo == "rectangulo":
         pts = [(-1.5*r, -0.9*r), (1.5*r, -0.9*r), (1.5*r, 0.9*r), (-1.5*r, 0.9*r)]
     elif tipo == "cuadrado":
@@ -53,7 +47,28 @@ def puntos_forma(tipo, cx, cy, r):
             pts.append((rad * np.cos(ang), rad * np.sin(ang)))
     return np.array([(cx + x, cy + y) for x, y in pts], dtype=np.int32)
 
-def generar_silueta(w, h, tipo=None):
+def generar_silueta(w: int, h: int, tipo: str | None = None) -> dict:
+    """
+    Genera la silueta de una figura.
+
+    Parametros
+    ----------
+    w: int
+        Ancho total de la pantalla
+    h: int
+        Alto total de la pantalla
+    tipo: Optional[str]
+        Forma a generar. Si no se indica, se elige aleatoriamente
+
+    Devuelve
+    --------
+    dict
+        Diccionario con los atributos de la silueta:
+        - `tipo`: Figura generada
+        - `centro`: Coordenadas (X, Y) del centro de la figura
+        - `radio`: Longitud o radio de la figura
+        - `puntos`: Secuencia de puntos de la figura
+    """
     tipo = tipo or random.choice(FORMAS)
     r = random.randint(int(h * 0.09), int(h * 0.14))
     margen = 15
@@ -65,11 +80,38 @@ def generar_silueta(w, h, tipo=None):
     return {"tipo": tipo, "centro": (cx, cy), "radio": r,
             "puntos": puntos_forma(tipo, cx, cy, r)}
 
-def dibujar_silueta(frame, silueta, color=(255, 255, 255)):
+def dibujar_silueta(frame: np.ndarray, silueta: dict, color: tuple[int, int, int] | None = None) -> None:
+    """
+    Dibuja la silueta de la figura
+
+    Parametros
+    ----------
+    frame: np.ndarray
+        Array con el frame actual
+    silueta: dict
+        Diccionario obtenido en `generar_silueta()`
+    color: Optional[tuple[int, int, int]]
+        Tupla en formato (R,G,B) para el color. Por defecto (255, 255, 255)
+    """
+    if color is None:
+        color = (255, 255, 255)
     pts = silueta["puntos"]
     cv2.polylines(frame, [pts], True, color, 3)
 
-def dibujar_divisoria(frame, color=(200, 200, 200)):
+def dibujar_divisoria(frame: np.ndarray, color: tuple[int, int, int] | None = None) -> None:
+    """
+    Dibuja la linea divisoria entre la zona de Dibujo y la zona de Siluetas.
+    La línea se coloca en el centro de la pantalla.
+
+    Parametros
+    ----------
+    frame: np.ndarray
+        Array con el frame actual
+    color: Optional[tuple[int, int, int]]
+            Tupla en formato (R,G,B) para el color. Por defecto (200, 200, 200)
+    """
+    if color is None:
+        color = (200, 200, 200)
     h, w = frame.shape[:2]
     y = h // 2
 
@@ -78,12 +120,53 @@ def dibujar_divisoria(frame, color=(200, 200, 200)):
     cv2.putText(frame, "Zona de dibujo", (10, y - 10),
                 cv2.FONT_HERSHEY_SIMPLEX, 0.6, color, 1)
 
-def mascara_contorno(puntos, w, h, grosor=1):
+def mascara_contorno(puntos: np.ndarray, w: int, h: int, grosor: int = 1) -> np.ndarray:
+    """
+    Genera la mascara para el contorno de la silueta
+
+    Parametros
+    ----------
+    puntos: np.ndarray
+        Array con los puntos de la silueta
+    w: int
+        Ancho total de la pantalla
+    h: int
+        Alto total de la pantalla
+    grosor: Optional[int]
+        Grosor de la mascara (Por defecto, 1)
+    
+    Devuelve
+    --------
+    np.ndarray
+        Matriz con la mascara
+    """
     m = np.zeros((h, w), dtype=np.uint8)
     cv2.polylines(m, [puntos], True, 255, grosor)
     return m
 
-def puntuar(silueta_pts, trazos, w, h, tolerancia=10):
+def puntuar(silueta_pts: np.ndarray, trazos: list, w: int, h: int, tolerancia: int = 10) -> int:
+    """
+    Función encargada de realizar la puntuación entre la
+    figura dibujada y la silueta generada.
+
+    Parametros
+    ----------
+    silueta_pts: np.ndarray
+        Array de puntos de la silueta
+    trazos: list
+        Array de trazos dibujados
+    w: int
+        Ancho total de la pantalla
+    h: int
+        Alto total de la pantalla
+    tolerancia: Optional[int]
+        Tolerancia del fallo, a mayor tolerancia más facil (Por defecto 10)
+    
+    Devuelve
+    --------
+    int
+        Puntuación obtenida
+    """
     validos = [np.array(s, dtype=np.int32) for s in trazos if len(s) > 1]
     if not validos:
         return 0
@@ -104,21 +187,101 @@ def puntuar(silueta_pts, trazos, w, h, tolerancia=10):
         return 0
     return round(100 * 2 * precision * cobertura / (precision + cobertura))
 
-def bbox_centro(trazos):
+def bbox_centro(trazos: list) -> tuple[int, int]:
+    """
+    Calcula el centro de los trazos dibujados
+
+    Parametros
+    ----------
+    trazos: list
+        Puntos de los trazos dibujados
+    
+    Devuelve
+    --------
+    tuple[int, int]
+        Punto central de los trazos
+    """
     pts = np.array([p for s in trazos for p in s])
     (x0, y0), (x1, y1) = pts.min(axis=0), pts.max(axis=0)
     return (x0 + x1) / 2, (y0 + y1) / 2
 
-def desplazar(trazos, dx, dy):
+def desplazar(trazos: list, dx, dy) -> list:
+    """
+    Deplaza una lista de trazos
+
+    Parametros
+    ----------
+    trazos: list
+        Lista de trazos
+    dx: int
+        Desplazamiento a efectuar en la coordenada X
+    dy: int
+        Desplazamiento a efectuar en la coordenada Y
+    
+    Devuelve
+    --------
+    list
+        Lista de trazos desplazados
+    """
     return [[(x + dx, y + dy) for x, y in s] for s in trazos]
 
-def dibujar_trazos(frame, trazos, offset=(0, 0), color=(0, 255, 255), grosor=3):
+def dibujar_trazos(
+        frame: np.ndarray,
+        trazos: list,
+        offset: tuple[int, int] | None = None,
+        color: tuple[int, int, int] | None = None,
+        grosor: int = 3
+    ) -> None:
+    """
+    Muestra por pantalla los trazos dibujados
+
+    Parametros
+    ----------
+    frame: np.ndarray
+        Frame actual de la cámara
+    trazos: list
+        Lista de puntos del trazo
+    offset: Optional[tuple[int, int]]
+        Desplazamiento de los puntos. Por defecto (0, 0)
+    color: Optional[tuple[int, int, int]]
+        Tupla en formato (R,G,B) para el color. Por defecto (0, 255, 255)
+    grosor: Optional[int]
+        Grosor del trazo. Por defecto "3"
+    """
+    if offset is None:
+        offset = (0, 0)
+    if color is None:
+        color = (0, 255, 255)
     for s in trazos:
         if len(s) > 1:
             pts = np.array(desplazar([s], *offset)[0], dtype=np.int32)
             cv2.polylines(frame, [pts], False, color, grosor)
 
-def panel_texto(frame, lineas, y_inicio, escala=0.6, color=(255, 255, 255)):
+def panel_texto(
+        frame: np.ndarray,
+        lineas: list[str],
+        y_inicio: int,
+        escala=0.6,
+        color: tuple[int, int, int] | None = None
+    ) -> None:
+    """
+    Dibuja un panel con texto dentro.
+
+    Parametros
+    ----------
+    frame: np.ndarray
+        Frame actual de la cámara
+    lineas: list[str]
+        Lineas de texto a escribir
+    y_inicio: int
+        Coordenada Y donde comienza el panel
+    escala: float
+        Escala de la fuente
+    color: Optional[tuple[int, int, int]]
+        Tupla en formato (R,G,B) para el color del texto. Por defecto (0, 255, 255)
+    """
+    if color is None:
+        color = (255, 255, 255)
     h, w = frame.shape[:2]
     overlay = frame.copy()
     cv2.rectangle(overlay, (20, y_inicio - 28),
@@ -129,14 +292,38 @@ def panel_texto(frame, lineas, y_inicio, escala=0.6, color=(255, 255, 255)):
         cv2.putText(frame, linea, ((w - tw) // 2, y_inicio + 32 * k),
                     cv2.FONT_HERSHEY_SIMPLEX, escala, color, 2)
 
+class FramesGestos:
+    def __init__(self, gestos: list[str]) -> None:
+        self.__gestos = dict()
+        for g in gestos:
+            self.__gestos[g] = 0
+
+    def sostenido(self, gesto: str, frames: int) -> bool:
+        return self.__gestos.get(gesto, -1) >= frames
+
+    def reiniciar_contadores(self) -> None:
+        for g in self.__gestos:
+            self.__gestos[g] = 0
+
+    @property
+    def get_dict(self) -> dict[str, int]:
+        return self.__gestos.copy()
+
+    def __setitem__(self, gesto: str, value: int) -> None:
+        if gesto in self.__gestos:
+            self.__gestos[gesto] = value
+
+    def __getitem__(self, gesto: str) -> int:
+        return self.__gestos.get(gesto, -1)
+
+    def get(self, gesto: str) -> int:
+        return self.__gestos.get(gesto, -1)
+    
+
 def game(args):
-    if not config.model_path.exists():
-        print("El modelo 'model_recognizer.task' no está descargado")
-        if questionary.confirm("¿Desea descargarlo ahora?").ask():
-            from download_models import download_models
-            download_models()
-        else:
-            raise FileNotFoundError("No es posible iniciar el juego sin el modelo 'model_recognizer.task'")
+    """
+    Función principal del juego
+    """
     #Para lo de las manos
     BaseOptions = mp.tasks.BaseOptions
     GestureRecognizer = mp.tasks.vision.GestureRecognizer
@@ -193,14 +380,7 @@ def game(args):
         t_paso_ok = 0
         t_cambio = time.time()
         t_inicio=0
-        frames_gesto = {"Thumb_Up": 0, "Thumb_Down": 0, "Pointing_Up": 0, "Victory": 0}
-
-        def sostenido(gesto):
-            return frames_gesto[gesto] >= config.frames_tutorial
-
-        def reiniciar_contadores():
-            for g in frames_gesto:
-                frames_gesto[g] = 0
+        frames_gesto = FramesGestos(["Thumb_Up", "Thumb_Down", "Pointing_Up", "Victory"])
 
         while cap.isOpened():
             ret, frame = cap.read()
@@ -249,7 +429,7 @@ def game(args):
                     ajustes = True
 
             gestos_vistos = {g[0].category_name for g in result.gestures}
-            for g in frames_gesto:
+            for g in frames_gesto.get_dict:
                 frames_gesto[g] = frames_gesto[g] + 1 if g in gestos_vistos else 0
 
             if frames_gesto["Victory"] == 0:
@@ -268,18 +448,18 @@ def game(args):
                 frames_pulgar = 0
                 frames_borrar = 0
                 esperando_soltar = True
-                reiniciar_contadores()
+                frames_gesto.reiniciar_contadores()
 
             # --- Máquina de estados ---
             if estado == "pantalla_inicial":
                 panel_texto(frame, ["Quieres ver el tutorial?",
                                     "Pulgar arriba = Si  |  Pulgar abajo = No"], 60)
                 if not en_pausa:
-                    if sostenido("Thumb_Up"):
+                    if frames_gesto.sostenido("Thumb_Up", config.frames_tutorial):
                         estado = "tutorial_intro"
                         t_cambio = time.time()
-                        reiniciar_contadores()
-                    elif sostenido("Thumb_Down"):
+                        frames_gesto.reiniciar_contadores()
+                    elif frames_gesto.sostenido("Thumb_Down", config.frames_tutorial):
                         iniciar = True
             elif estado == "tutorial_intro":
                 panel_texto(frame, ["OBJETIVO DEL JUEGO",
@@ -289,12 +469,12 @@ def game(args):
                                     "tu dibujo bajara y se puntuara lo bien",
                                     "que sigue el contorno y que no pintes de mas.",
                                     "Pulgar arriba para continuar"], 50)
-                if not en_pausa and sostenido("Thumb_Up"):
+                if not en_pausa and frames_gesto.sostenido("Thumb_Up", config.frames_tutorial):
                     estado = "tutorial"
                     paso_tutorial = 0
                     t_paso_ok = 0
                     t_cambio = time.time()
-                    reiniciar_contadores()
+                    frames_gesto.reiniciar_contadores()
             elif estado == "tutorial":
                 paso = config.pasos_tutorial[paso_tutorial]
 
@@ -317,7 +497,7 @@ def game(args):
                 if t_paso_ok == 0:
                     panel_texto(frame, [paso["titulo"]] + paso["texto"], 50)
                     dibujado = sum(len(s) for s in trazos) > 20
-                    cumplido = sostenido(paso["gesto"]) and (
+                    cumplido = frames_gesto.sostenido(paso["gesto"], config.frames_tutorial) and (
                         paso["gesto"] != "Pointing_Up" or dibujado)
                     if not en_pausa and cumplido:
                         t_paso_ok = time.time()
@@ -330,7 +510,7 @@ def game(args):
                         paso_tutorial += 1
                         t_paso_ok = 0
                         t_cambio = time.time()
-                        reiniciar_contadores()
+                        frames_gesto.reiniciar_contadores()
                         if paso_tutorial >= len(config.pasos_tutorial):
                             iniciar = True
             elif estado == "dibujando":
@@ -407,7 +587,7 @@ def game(args):
                     estado = "dibujando"
                     t_cambio = time.time()
                     last_time = time.time()
-                    reiniciar_contadores()
+                    frames_gesto.reiniciar_contadores()
 
             elif estado == "pausado":                
                 config.show_config_menu()
@@ -426,7 +606,7 @@ def game(args):
                 trazo_actual = None
                 silueta = None
                 frames_sin_dedo = 0
-                reiniciar_contadores()
+                frames_gesto.reiniciar_contadores()
                 t_cambio = time.time()
                 last_time = time.time()
 
@@ -519,6 +699,35 @@ def game(args):
         cap.release()
         cv2.destroyAllWindows()
         config.save_configs()
+
+
+def main() -> None:
+    parser = argparse.ArgumentParser()
+    parser.add_argument('-r', '--resolution', nargs=2, metavar=("Width", "Height"), type=int, help="Fuerza la resolución de la camara.")
+    parser.add_argument('-f', '--fps', type=int, help="Fuerza los FPS de la camara.")
+    parser.add_argument('-b', '--buffer', type=int, help="Fuerza el tamaño del buffer.")
+    parser.add_argument('--wsl', action="store_true", help="Ajuste preestablecido para la camara en WSL usando usbipd (480p30 - buffer = 2)")
+
+    args = parser.parse_args()
+
+    if args.wsl:
+        args.resolution = (640, 480)
+        args.fps = 30
+        args.buffer = 2
+
+    if args.resolution is not None:
+        args.width = args.resolution[0]
+        args.height = args.resolution[1]
+
+    if not config.model_path.exists():
+        print("El modelo 'model_recognizer.task' no está descargado")
+        if questionary.confirm("¿Desea descargarlo ahora?").ask():
+            from download_models import download_models
+            download_models()
+        else:
+            raise FileNotFoundError("No es posible iniciar el juego sin el modelo 'model_recognizer.task'")
+    
+    exit(game(args))
 
 if __name__ == '__main__':
     main()

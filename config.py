@@ -53,7 +53,7 @@ class Config:
         try:
             with open(self.config_file, 'r', encoding='utf-8') as f:
                 datos = json.load(f)
-        except (OSError, json.JSONDEcodeERROR) as e:
+        except (OSError, json.JSONDecodeError) as e:
             print(f'No se pudo leer el archivo de configuración ({self.config_file.name})')
             return
         
