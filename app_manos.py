@@ -292,6 +292,56 @@ def panel_texto(
         cv2.putText(frame, linea, ((w - tw) // 2, y_inicio + 32 * k),
                     cv2.FONT_HERSHEY_SIMPLEX, escala, color, 2)
 
+def actualizar_trazo(
+        punta: tuple[int, int], 
+        y_div: int, 
+        trazos: list, 
+        trazo_actual: list | None, 
+        frames_con: int, 
+        frames_sin: int
+    ) -> tuple[list, int, int]:
+    """
+    Función que contiene la lógica del trazo de dibujo.
+    Se gestiona el delay inicial del dibujo y la continuidad del mismo.
+
+    Parametros
+    ----------
+    punta: tuple[int, int]
+        Coordenadas X, Y de la punta del dedo
+    y_div: int
+        Coordenada Y de la división entre zona siluetas y zona dibujo
+    trazos: list
+        Lista con todos los trazos
+    trazo_actual: list | None
+        Lista con el trazo actual
+    frames_con: int
+        Número de frames con el dedo indice levantado
+    frames_sin: int
+        Número de frames sin el dedo indice levantado
+
+    Devuelve
+    --------
+    tuple[list, int ,int]
+        - trazo_actual
+        - frames_con
+        - frames_sin
+    """
+    if punta is not None and punta[1] < y_div:
+        frames_sin = 0
+        if trazo_actual is None:
+            frames_con += 1
+            if frames_con >= config.frames_delay_dibujo:
+                trazo_actual = []
+                trazos.append(trazo_actual)
+        if trazo_actual is not None:
+            trazo_actual.append(punta)
+    else:
+        frames_sin += 1
+        if frames_sin > 4:
+            trazo_actual = None
+            frames_con = 0
+    return trazo_actual, frames_con, frames_sin
+
 class FramesGestos:
     def __init__(self, gestos: list[str]) -> None:
         self.__gestos = dict()
@@ -318,7 +368,6 @@ class FramesGestos:
 
     def get(self, gesto: str) -> int:
         return self.__gestos.get(gesto, -1)
-    
 
 def game(args):
     """
@@ -367,14 +416,12 @@ def game(args):
         esperando_soltar = False
         frames_sin_dedo = 0
         frames_con_dedo = 0
-        frames_pulgar = 0
         desplazamiento = (0, 0)
         t_anim = t_resultado = 0
         ultima_puntuacion = 0
         puntos_total = 0
         figuras_hechas=0
         key = 0
-        frames_borrar = 0
         t_borrado = 0
         paso_tutorial = 0
         t_paso_ok = 0
@@ -413,20 +460,12 @@ def game(args):
 
             # --- Qué hace la mano ---
             punta = None
-            pulgar_arriba = False
-            pulgar_abajo = False
-            ajustes = False
             for i, gestos in enumerate(result.gestures):
                 nombre = gestos[0].category_name
-                lm = result.hand_landmarks[i]
-                if nombre == "Pointing_Up" and punta is None:
+                if nombre == "Pointing_Up":
+                    lm = result.hand_landmarks[i]
                     punta = (int(lm[8].x * w_f), int(lm[8].y * h_f))
-                elif nombre == "Thumb_Up":
-                    pulgar_arriba = True
-                elif nombre == "Thumb_Down":
-                    pulgar_abajo = True
-                elif nombre == "Victory":
-                    ajustes = True
+                    break
 
             gestos_vistos = {g[0].category_name for g in result.gestures}
             for g in frames_gesto.get_dict:
@@ -441,12 +480,10 @@ def game(args):
             en_pausa = time.time() - t_cambio < config.pausa_transicion_tutorial
 
             if (estado == "dibujando" and not esperando_soltar
-                    and frames_gesto["Victory"] >= config.frames_pausa):
+                    and frames_gesto.sostenido("Victory", config.frames_pausa)):
                 estado = "pausado"
                 trazo_actual = None
                 frames_con_dedo = 0
-                frames_pulgar = 0
-                frames_borrar = 0
                 esperando_soltar = True
                 frames_gesto.reiniciar_contadores()
 
@@ -478,21 +515,9 @@ def game(args):
             elif estado == "tutorial":
                 paso = config.pasos_tutorial[paso_tutorial]
 
-                if punta is not None and punta[1] < y_div:
-                    frames_sin_dedo = 0
-                    if trazo_actual is None:
-                        frames_con_dedo += 1
-                        if frames_con_dedo >= config.frames_delay_dibujo:
-                            trazo_actual = []
-                            trazos.append(trazo_actual)
-
-                    if trazo_actual is not None:
-                        trazo_actual.append(punta)
-                else:
-                    frames_sin_dedo += 1
-                    if frames_sin_dedo > 4:
-                        trazo_actual = None
-                        frames_con_dedo = 0
+                trazo_actual, frames_con_dedo, frames_sin_dedo = actualizar_trazo(
+                    punta, y_div, trazos, trazo_actual, frames_con_dedo, frames_sin_dedo
+                )
 
                 if t_paso_ok == 0:
                     panel_texto(frame, [paso["titulo"]] + paso["texto"], 50)
@@ -514,24 +539,11 @@ def game(args):
                         if paso_tutorial >= len(config.pasos_tutorial):
                             iniciar = True
             elif estado == "dibujando":
-                if punta is not None and punta[1] < y_div:
-                    frames_sin_dedo = 0
-                    if trazo_actual is None:
-                        frames_con_dedo += 1
-                        if frames_con_dedo >= config.frames_delay_dibujo:
-                            trazo_actual = []
-                            trazos.append(trazo_actual)
+                trazo_actual, frames_con_dedo, frames_sin_dedo = actualizar_trazo(
+                    punta, y_div, trazos, trazo_actual, frames_con_dedo, frames_sin_dedo
+                )
 
-                    if trazo_actual is not None:
-                        trazo_actual.append(punta)
-                else:
-                    frames_sin_dedo += 1
-                    if frames_sin_dedo > 4:
-                        trazo_actual = None
-                        frames_con_dedo = 0
-
-                frames_pulgar = frames_pulgar + 1 if pulgar_arriba else 0
-                terminar = frames_pulgar >= config.frames_para_terminar or key == 32
+                terminar = frames_gesto.sostenido("Thumb_Up", config.frames_para_terminar) or key == 32
 
                 validos = [s for s in trazos if len(s) > 1]
                 if terminar and validos:
@@ -541,17 +553,16 @@ def game(args):
                     desplazamiento = (dx, dy)
                     trazos = validos
                     trazo_actual = None
-                    frames_pulgar = 0
+                    frames_gesto["Thumb_Up"] = 0
                     t_anim = time.time()
                     estado = "bajando"
 
-                frames_borrar = frames_borrar + 1 if pulgar_abajo else 0
-                if frames_borrar >= config.frames_para_borrar:
+                if frames_gesto.sostenido("Thumb_Down", config.frames_para_borrar):
                     trazos = []
                     trazo_actual = None
                     frames_sin_dedo = 0
-                    frames_borrar = 0
                     frames_con_dedo = 0
+                    frames_gesto["Thumb_Down"] = 0
                     t_borrado = time.time()
                 if time.time() - t_borrado < 1.0:
                     cv2.putText(frame, "Dibujo borrado", (w_f // 2 - 100, h_f // 2 - 40),
@@ -606,6 +617,7 @@ def game(args):
                 trazo_actual = None
                 silueta = None
                 frames_sin_dedo = 0
+                frames_con_dedo = 0
                 frames_gesto.reiniciar_contadores()
                 t_cambio = time.time()
                 last_time = time.time()
