@@ -1,4 +1,4 @@
-# IPM - Práctica 2 
+# IPM - Práctica Bloque 2 
 
 ### Autores:
 #### Pablo Serna Soriano
@@ -8,7 +8,23 @@
 
 ## Introducción
 
-Explicación del juego y cómo funciona
+Para esta práctica hemos realizado un juego que consiste principalmente en realizar dibujos en pantalla mediante gestos con la mano para tratar de replicar lo mejor posible la figura indicada.
+
+Nuestro juego pone a prueba la coordinación ojo-mano al igual que la visión espacial a la hora de realizar el dibujo.
+
+El funcionamiento es muy simple, durante la partida se mostrará una silueta en la mitad inferior de la pantalla y el jugador deberá tratar de simularla en la mitad superior.
+Durante el juego, el jugador tiene a su disposición diferentes gestos que puede utilizar y que se explican en un pequeño tutorial opcional al inicio de la partida.
+Además, se pueden modificar algunos aspectos de la partida, como su duración entre otros, mediante un menú de configuración.
+
+Para realizar la detección de estos gestos hemos utilizado el modelo *gesture recognizer* que detecta estos gestos simples:
+
+![Indices para el landmarker de la mano](images/poses_mano.png)
+
+En nuestro código contamos con varias funciones auxiliares que llamamos a lo largo del juego y un bucle principal que alterna entre distintos "estados" dependiendo del momento del juego. Como ejemplo de referencia, existe un estado "dibujando" y un estado "pausado".
+
+A la hora de utilizar los índices de los puntos del landmarker solo hemos utilizado el del dedo índice para dibujar, ya que nos hemos centrado más en los gestos realizados con la mano. Aún así, para saber que índice debíamos utilizar acudimos a esta otra imagen:
+
+![Indices para el landmarker de la mano](images/indices_mano.png)
 
 ## Prerequisitos
 
